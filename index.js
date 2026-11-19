@@ -60,21 +60,84 @@ function playNextAudio() {
   });
 }
 function getAdditionalAudio(filename) {
-  return audioByName.get(normalizeAudioName(filename))?.[0] || null;
-}
-function getStopAudio(stop) {
-  if (!stop) return null;
-  const matches = audioByName.get(normalizeAudioName(stop.name)) || [];
-  if (!matches.length) {
-    console.warn('Nie znaleziono nagrania dla przystanku:', stop.name);
+  const wanted = normalizeAudioName(path.basename(String(filename || ''), '.mp3'));
+  const match = additionalAudioFiles.find(name =>
+    normalizeAudioName(path.basename(name, '.mp3')) === wanted
+  );
+  if (!match) {
+    console.warn('Nie znaleziono komunikatu dodatkowego:', filename);
     return null;
   }
-  if (stop.city) {
-    const cityKey = normalizeAudioName(stop.city);
-    const cityMatch = matches.find(file => normalizeAudioName(file).includes(cityKey));
-    if (cityMatch) return cityMatch;
+  return additionalAudioByName.get(match) || null;
+}
+
+function getLineAudio(line) {
+  const wanted = normalizeAudioName(line);
+  if (!wanted) return null;
+  const lineDirectories = [
+    path.join(AUDIO_DIR, '0 Numery linii', 'Autobusowe'),
+    path.join(AUDIO_DIR, '0 Numery linii', 'Tramwajowe'),
+    path.join(AUDIO_DIR, '0 Numery linii', 'Nocne')
+  ];
+  for (const directory of lineDirectories) {
+    const candidate = path.join(directory, String(line).trim() + '.mp3');
+    if (fs.existsSync(candidate)) {
+      console.log('Numer linii:', String(line), '->', candidate);
+      return candidate;
+    }
   }
-  return matches[0];
+  // Awaryjnie porównujemy dokładną nazwę bazową, ale nigdy nie dopasowujemy
+  // fragmentów (np. linia 97 nie może dostać nagrania 974 ani 0).
+  const match = audioFiles.find(file => {
+    const normalizedDirectory = normalizeAudioName(path.relative(AUDIO_DIR, path.dirname(file)));
+    const allowedDirectory = ['autobusowe', 'tramwajowe', 'nocne'].includes(normalizedDirectory);
+    return allowedDirectory &&
+      normalizeAudioName(path.basename(file, path.extname(file))) === wanted;
+  });
+  if (match) {
+    console.log('Numer linii:', String(line), '->', match);
+    return match;
+  }
+  console.warn('Nie znaleziono dokładnego nagrania numeru linii:', String(line));
+  return null;
+}
+
+function getStopAudio(stop) {
+  if (!stop || !stop.name) return null;
+  const stopKey = normalizeAudioName(stop.name);
+  const cityKey = normalizeAudioName(stop.city || '');
+  if (!stopKey) return null;
+
+  const candidates = audioFiles
+    .filter(file => {
+      const relative = path.relative(AUDIO_DIR, file);
+      return !relative.startsWith(path.join('0 Komunikaty dodatkowe')) &&
+        !relative.startsWith(path.join('0 Numery linii'));
+    })
+    .map(file => {
+      const base = normalizeAudioName(path.basename(file, path.extname(file)));
+      let score = 0;
+      if (base === stopKey) score = 100;
+      else if (base.startsWith(stopKey)) score = 75;
+      else if (base.includes(stopKey)) score = 55;
+
+      if (cityKey && base.includes(cityKey + stopKey)) score += 40;
+      else if (cityKey && base.includes(cityKey)) score += 8;
+
+      // Pliki scalone są przydatne jako ostatnia deska ratunku, ale zwykłe
+      // nagrania przystanków mają pierwszeństwo.
+      if (/_join$/i.test(path.basename(file, path.extname(file)))) score -= 5;
+      return { file, score, base };
+    })
+    .filter(item => item.score > 0)
+    .sort((a, b) => b.score - a.score || a.file.localeCompare(b.file, 'pl'));
+
+  if (!candidates.length) {
+    console.warn('Nie znaleziono nagrania dla przystanku:', stop.name, '| miasto:', stop.city || '(brak)');
+    return null;
+  }
+  console.log('Przystanek:', stop.name, '->', candidates[0].file);
+  return candidates[0].file;
 }
 function announceNextStop(stop, terminal = false) {
   const files = [];
@@ -327,14 +390,7 @@ wss.on('connection', ws => {
         state.announcement = null;
 
         // Komunikat początkowy: życzenia, numer linii i kierunek.
-        // Szukamy numeru linii po dokładnej nazwie pliku w katalogu autobusowym.
-        // Nie korzystamy z ogólnej mapy nazw, bo może zawierać kolizje z innymi nagraniami.
-        const lineAudioCandidates = [
-          path.join(AUDIO_DIR, '0 Numery linii', 'Autobusowe', `${state.line}.mp3`),
-          path.join(AUDIO_DIR, '0 Numery linii', 'Tramwajowe', `${state.line}.mp3`),
-          path.join(AUDIO_DIR, '0 Numery linii', 'Nocne', `${state.line}.mp3`)
-        ];
-        const lineAudio = lineAudioCandidates.find(file => fs.existsSync(file)) || null;
+        const lineAudio = getLineAudio(state.line);
         const directionAudio = getStopAudio({ name: state.direction });
         const introFiles = [
           getAdditionalAudio('34_ZyczymyPrzyjemnejPodrozy'),
@@ -343,6 +399,12 @@ wss.on('connection', ws => {
           path.join(AUDIO_DIR, '0 Numery linii', 'Kierunek.mp3'),
           directionAudio
         ];
+        console.log('Start kursu:', {
+          line: state.line,
+          lineAudio: lineAudio || 'BRAK',
+          direction: state.direction,
+          directionAudio: directionAudio || 'BRAK'
+        });
         queueAudio(introFiles);
         break;
       }
