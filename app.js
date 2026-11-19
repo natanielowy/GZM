@@ -49,9 +49,9 @@ function render(state) {
     cell.className = "time-cell";
     if (visibleStops[i]) {
       const value = document.createElement("span");
-      value.textContent = visibleStops[i].arrivalTime || "—";
+      value.textContent = "—";
       const unit = document.createElement("small");
-      unit.textContent = "";
+      unit.textContent = "min";
       cell.append(value, unit);
     } else {
       cell.style.borderBottom = "0";
