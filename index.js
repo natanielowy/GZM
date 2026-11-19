@@ -26,6 +26,11 @@ function collectAudioFiles(directory, result = []) {
   return result;
 }
 const audioFiles = collectAudioFiles(AUDIO_DIR);
+const ADDITIONAL_AUDIO_DIR = path.join(AUDIO_DIR, '0 Komunikaty dodatkowe');
+const additionalAudioFiles = fs.existsSync(ADDITIONAL_AUDIO_DIR)
+  ? fs.readdirSync(ADDITIONAL_AUDIO_DIR).filter(name => name.toLowerCase().endsWith('.mp3')).sort((a, b) => a.localeCompare(b, 'pl', { numeric: true }))
+  : [];
+const additionalAudioByName = new Map(additionalAudioFiles.map(name => [name, path.join(ADDITIONAL_AUDIO_DIR, name)]));
 const audioByName = new Map();
 for (const file of audioFiles) {
   const key = normalizeAudioName(path.basename(file, path.extname(file)));
@@ -272,6 +277,13 @@ app.get('/display', (req, res) => res.sendFile(path.join(__dirname, '../public/d
 app.get('/driver', (req, res) => res.sendFile(path.join(__dirname, '../public/driver/index.html')));
 app.get('/api/state', (req, res) => res.json(getPublicState()));
 
+app.get('/api/announcements/additional', (req, res) => {
+  res.json(additionalAudioFiles.map(filename => ({
+    filename,
+    label: path.basename(filename, '.mp3').replace(/^\\d+(?:_\\d+)?_?/, '').replace(/_/g, ' ')
+  })));
+});
+
 app.get('/api/gtfs/lines', (req, res) => {
   res.json(gtfs.lineNames.map(name => {
     const line = gtfs.catalog[name];
@@ -328,7 +340,13 @@ wss.on('connection', ws => {
         if (!state.active) return;
         state.atStop = true;
         state.announcement = null;
-        queueAudio([getStopAudio(getRoute()?.stops?.[state.stopIndex])]);
+        const stops = getRoute()?.stops || [];
+        const currentStop = stops[state.stopIndex];
+        if (currentStop && state.stopIndex === stops.length - 1) {
+          announceNextStop(currentStop, true);
+        } else {
+          queueAudio([getStopAudio(currentStop)]);
+        }
         break;
       }
 
@@ -361,6 +379,12 @@ wss.on('connection', ws => {
         state.announcement = text;
         announceNextStop(next || stops[state.stopIndex], !next);
         broadcast('announcement', { text });
+        break;
+      }
+
+      case 'playAdditional': {
+        const file = additionalAudioByName.get(message.filename);
+        if (file) queueAudio([file]);
         break;
       }
 
