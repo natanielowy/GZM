@@ -1,5 +1,6 @@
 let ws;
 let linesData = [];
+let latestState = null;
 
 const line = document.getElementById('line');
 const direction = document.getElementById('direction');
@@ -46,7 +47,11 @@ function loadLines() {
         option.textContent = item.line;
         line.appendChild(option);
       });
-      updateDirections();
+      if (latestState?.line && [...line.options].some(option => option.value === latestState.line)) {
+        line.value = latestState.line;
+      }
+      updateDirections(latestState?.direction);
+      if (latestState) render(latestState);
     })
     .catch(error => {
       console.error(error);
@@ -69,6 +74,16 @@ function updateDirections(selectedDirection) {
 }
 
 function render(state) {
+  latestState = state;
+  if (!linesData.length) {
+    document.getElementById('currentLine').textContent = state.line || '---';
+    document.getElementById('currentDirection').textContent = (state.direction || '---').toUpperCase();
+    document.getElementById('status').textContent = state.active ? 'KURS AKTYWNY' : 'NIEAKTYWNY';
+    document.getElementById('currentStop').textContent = '---';
+    document.getElementById('stopStatus').textContent = '---';
+    return;
+  }
+
   document.getElementById('currentLine').textContent = state.line || '---';
   document.getElementById('currentDirection').textContent = (state.direction || '---').toUpperCase();
   document.getElementById('status').textContent = state.active ? 'KURS AKTYWNY' : 'NIEAKTYWNY';
