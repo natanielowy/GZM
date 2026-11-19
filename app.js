@@ -26,10 +26,6 @@ const directionElement = document.getElementById("direction");
 const clockElement = document.getElementById("clock");
 const dateElement = document.getElementById("date");
 
-let previousStopIndex = null;
-let arrivedUntil = 0;
-let labelTimer = null;
-
 function updateClock() {
   const now = new Date();
 
@@ -50,12 +46,6 @@ function render(state) {
     Math.min(Number(state.stopIndex) || 0, Math.max(0, routeStops.length - 1))
   );
 
-  if (previousStopIndex !== null && previousStopIndex !== index) {
-    arrivedUntil = Date.now() + 4000;
-  }
-
-  previousStopIndex = index;
-
   lineNumber.textContent = state.line;
   directionElement.textContent = state.direction;
 
@@ -74,16 +64,11 @@ function render(state) {
       if (i === 0) {
         const label = document.createElement("div");
         label.className = "stop-label";
-        label.textContent = Date.now() < arrivedUntil
+        label.textContent = state.atStop
           ? "Tu jesteś:"
           : "Następny przystanek:";
 
         row.appendChild(label);
-
-        if (Date.now() < arrivedUntil) {
-          label.classList.add("fade");
-          requestAnimationFrame(() => label.classList.remove("fade"));
-        }
       }
 
       const marker = document.createElement("span");
@@ -119,12 +104,6 @@ function render(state) {
     }
 
     times.appendChild(cell);
-  }
-
-  // Aktualizuj napis bez przerysowywania całej tablicy.
-  clearTimeout(labelTimer);
-  if (Date.now() < arrivedUntil) {
-    labelTimer = setTimeout(() => render(state), arrivedUntil - Date.now());
   }
 }
 
