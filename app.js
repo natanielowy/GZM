@@ -1,24 +1,3 @@
-const routes = {
-  M3: {
-    "Piekary Dwór": [
-      "Bobrowniki Dworzec",
-      "Nowy Świat",
-      "Centrum handlowe",
-      "Osiedle",
-      "Centrum przesiadkowe",
-      "Piekary Dwór"
-    ],
-    "Bobrowniki Dworzec": [
-      "Piekary Dwór",
-      "Centrum przesiadkowe",
-      "Osiedle",
-      "Centrum handlowe",
-      "Nowy Świat",
-      "Bobrowniki Dworzec"
-    ]
-  }
-};
-
 const lineNumber = document.getElementById("lineNumber");
 const times = document.getElementById("times");
 const stopsElement = document.getElementById("stops");
@@ -28,81 +7,55 @@ const dateElement = document.getElementById("date");
 
 function updateClock() {
   const now = new Date();
-
-  clockElement.textContent = now.toLocaleTimeString("pl-PL", {
-    hour: "2-digit",
-    minute: "2-digit"
-  });
-
+  clockElement.textContent = now.toLocaleTimeString("pl-PL", { hour: "2-digit", minute: "2-digit" });
   dateElement.textContent = now.toLocaleDateString("pl-PL");
 }
 
 function render(state) {
   if (!state || !state.line || !state.direction) return;
-
-  const routeStops = routes[state.line]?.[state.direction] || [];
-  const index = Math.max(
-    0,
-    Math.min(Number(state.stopIndex) || 0, Math.max(0, routeStops.length - 1))
-  );
+  const routeStops = state.stops || [];
+  const index = Math.max(0, Math.min(Number(state.stopIndex) || 0, Math.max(0, routeStops.length - 1)));
 
   lineNumber.textContent = state.line;
   directionElement.textContent = state.direction;
-
   stopsElement.innerHTML = "";
   times.innerHTML = "";
 
   const visibleStops = routeStops.slice(index, index + 5);
-
-  // Zawsze pięć równych wierszy.
   for (let i = 0; i < 5; i++) {
     const row = document.createElement("div");
-
     if (i < visibleStops.length) {
       row.className = "stop-row" + (i === 0 ? " current" : "");
-
       if (i === 0) {
         const label = document.createElement("div");
         label.className = "stop-label";
-        label.textContent = state.atStop
-          ? "Tu jesteś:"
-          : "Następny przystanek:";
-
+        label.textContent = state.atStop ? "Tu jesteś:" : "Następny przystanek:";
         row.appendChild(label);
       }
-
       const marker = document.createElement("span");
       marker.className = "stop-marker";
-
       const name = document.createElement("span");
       name.className = "stop-name";
-      name.textContent = visibleStops[i];
-
+      name.textContent = visibleStops[i].name || "---";
       row.append(marker, name);
     } else {
       row.className = "stop-row empty";
     }
-
     stopsElement.appendChild(row);
   }
 
-  // Cztery pola minut zawsze odpowiadają czterem następnym wierszom.
   for (let i = 1; i <= 4; i++) {
     const cell = document.createElement("div");
     cell.className = "time-cell";
-
     if (visibleStops[i]) {
       const value = document.createElement("span");
-      value.textContent = "—";
-
+      value.textContent = visibleStops[i].arrivalTime || "—";
       const unit = document.createElement("small");
-      unit.textContent = "min";
-
+      unit.textContent = "";
       cell.append(value, unit);
     } else {
       cell.style.borderBottom = "0";
     }
-
     times.appendChild(cell);
   }
 }
@@ -110,29 +63,19 @@ function render(state) {
 function connect() {
   const protocol = location.protocol === "https:" ? "wss:" : "ws:";
   const socket = new WebSocket(`${protocol}//${location.host}`);
-
   socket.addEventListener("message", event => {
     try {
       const message = JSON.parse(event.data);
-
-      if (message.type === "state") {
-        render(message.state);
-      }
+      if (message.type === "state") render(message.state);
     } catch (error) {
       console.error("Błąd WebSocket:", error);
     }
   });
-
-  socket.addEventListener("close", () => {
-    setTimeout(connect, 2000);
-  });
+  socket.addEventListener("close", () => setTimeout(connect, 2000));
 }
 
 updateClock();
 setInterval(updateClock, 1000);
 connect();
-
-fetch("/api/state")
-  .then(response => response.json())
-  .then(render)
+fetch("/api/state").then(response => response.json()).then(render)
   .catch(error => console.error("Błąd pobierania stanu:", error));
