@@ -280,7 +280,7 @@ app.get('/api/state', (req, res) => res.json(getPublicState()));
 app.get('/api/announcements/additional', (req, res) => {
   res.json(additionalAudioFiles.map(filename => ({
     filename,
-    label: path.basename(filename, '.mp3').replace(/^\\d+(?:_\\d+)?_?/, '').replace(/_/g, ' ')
+    label: path.basename(filename, '.mp3').replace(/^\d+(?:_\d+)?_?/, '').replace(/_/g, ' ')
   })));
 });
 
