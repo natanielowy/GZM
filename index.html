@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SRG-6000P – GZM Passenger System</title>
+<link rel="stylesheet" href="/driver/style.css">
+</head>
+<body>
+<header>
+  <div>
+    <strong>SRG-6000P</strong>
+    <small>GZM PASSENGER SYSTEM</small>
+  </div>
+  <span id="connection">ŁĄCZENIE...</span>
+</header>
+
+<main>
+  <section class="panel">
+    <h2>WYBÓR LINII</h2>
+    <select id="line">
+      <option value="M3">M3</option>
+    </select>
+
+    <h2>KIERUNEK</h2>
+    <select id="direction">
+      <option value="Piekary Dwór">Piekary Dwór</option>
+      <option value="Bobrowniki Dworzec">Bobrowniki Dworzec</option>
+    </select>
+
+    <button class="start" onclick="send('start')">ROZPOCZNIJ KURS</button>
+    <button class="end" onclick="send('end')">ZAKOŃCZ KURS</button>
+  </section>
+
+  <section class="panel controls">
+    <h2>STEROWANIE PRZYSTANKAMI</h2>
+
+    <div class="buttons">
+      <button onclick="send('previous')">◀ POPRZEDNI</button>
+      <button onclick="send('next')">NASTĘPNY ▶</button>
+    </div>
+
+    <button class="arrived" onclick="send('arrived')">
+      TU JESTEŚ
+    </button>
+
+    <button class="announce" onclick="send('announce')">
+      <span>🔊</span>
+      ZAPOWIEDŹ PRZYSTANKU
+    </button>
+
+    <div class="info">
+      <span>LINIA</span>
+      <strong id="currentLine">M3</strong>
+
+      <span>KIERUNEK</span>
+      <strong id="currentDirection">PIEKARY DWÓR</strong>
+
+      <span>STATUS</span>
+      <strong id="status">NIEAKTYWNY</strong>
+
+      <span>AKTUALNY PRZYSTANEK</span>
+      <strong id="currentStop">---</strong>
+
+      <span>STATUS PRZYSTANKU</span>
+      <strong id="stopStatus">---</strong>
+    </div>
+  </section>
+</main>
+
+<script src="/driver/app.js"></script>
+</body>
+</html>
