@@ -3,12 +3,82 @@ const http = require('http');
 const WebSocket = require('ws');
 const path = require('path');
 const fs = require('fs');
+const { spawn } = require('child_process');
 
 const app = express();
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 
 const GTFS_DIR = path.join(__dirname, '../data/gtfs/current');
+const AUDIO_DIR = path.join(__dirname, '../data/announcements/Zapowiedzi');
+const AUDIO_DEVICE = 'alsa/plughw:CARD=PCH,DEV=3';
+
+function normalizeAudioName(value) {
+  return String(value || '').normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+function collectAudioFiles(directory, result = []) {
+  if (!fs.existsSync(directory)) return result;
+  for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+    const fullPath = path.join(directory, entry.name);
+    if (entry.isDirectory()) collectAudioFiles(fullPath, result);
+    else if (entry.isFile() && entry.name.toLowerCase().endsWith('.mp3')) result.push(fullPath);
+  }
+  return result;
+}
+const audioFiles = collectAudioFiles(AUDIO_DIR);
+const audioByName = new Map();
+for (const file of audioFiles) {
+  const key = normalizeAudioName(path.basename(file, path.extname(file)));
+  if (!audioByName.has(key)) audioByName.set(key, []);
+  audioByName.get(key).push(file);
+}
+const audioQueue = [];
+let audioPlaying = false;
+function queueAudio(files) {
+  for (const file of files.filter(Boolean)) {
+    if (fs.existsSync(file)) audioQueue.push(file);
+    else console.warn('Brak pliku zapowiedzi:', file);
+  }
+  playNextAudio();
+}
+function playNextAudio() {
+  if (audioPlaying || !audioQueue.length) return;
+  const file = audioQueue.shift();
+  audioPlaying = true;
+  console.log('Zapowiedź audio:', path.basename(file));
+  const player = spawn('mpv', ['--no-video', '--really-quiet', '--audio-device=' + AUDIO_DEVICE, file], { stdio: 'ignore' });
+  player.on('error', error => console.error('Nie udało się uruchomić MPV:', error.message));
+  player.on('close', code => {
+    if (code !== 0) console.warn('MPV zakończył odtwarzanie kodem:', code);
+    audioPlaying = false;
+    playNextAudio();
+  });
+}
+function getAdditionalAudio(filename) {
+  return audioByName.get(normalizeAudioName(filename))?.[0] || null;
+}
+function getStopAudio(stop) {
+  if (!stop) return null;
+  const matches = audioByName.get(normalizeAudioName(stop.name)) || [];
+  if (!matches.length) {
+    console.warn('Nie znaleziono nagrania dla przystanku:', stop.name);
+    return null;
+  }
+  if (stop.city) {
+    const cityKey = normalizeAudioName(stop.city);
+    const cityMatch = matches.find(file => normalizeAudioName(file).includes(cityKey));
+    if (cityMatch) return cityMatch;
+  }
+  return matches[0];
+}
+function announceNextStop(stop, terminal = false) {
+  const files = [];
+  const prefix = getAdditionalAudio(terminal ? '3_KoniecTrasy' : '1_NastepnyPrzystanek');
+  if (prefix) files.push(prefix);
+  const stopAudio = getStopAudio(stop);
+  if (stopAudio) files.push(stopAudio);
+  queueAudio(files);
+}
 
 function parseCSV(content) {
   const rows = [];
@@ -254,16 +324,23 @@ wss.on('connection', ws => {
         state.announcement = null;
         break;
 
-      case 'arrived':
+      case 'arrived': {
         if (!state.active) return;
         state.atStop = true;
         state.announcement = null;
+        queueAudio([getStopAudio(getRoute()?.stops?.[state.stopIndex])]);
         break;
+      }
 
       case 'next': {
         if (!state.active) return;
         const stops = getRoute()?.stops || [];
-        if (state.stopIndex < stops.length - 1) state.stopIndex++;
+        if (state.stopIndex < stops.length - 1) {
+          state.stopIndex++;
+          announceNextStop(stops[state.stopIndex]);
+        } else {
+          announceNextStop(stops[state.stopIndex], true);
+        }
         state.atStop = false;
         state.announcement = null;
         break;
@@ -282,6 +359,7 @@ wss.on('connection', ws => {
         const next = stops[state.stopIndex + 1];
         const text = next ? `Następny przystanek: ${next.name}` : `Koniec trasy: ${stops[state.stopIndex]?.name || ''}`;
         state.announcement = text;
+        announceNextStop(next || stops[state.stopIndex], !next);
         broadcast('announcement', { text });
         break;
       }
