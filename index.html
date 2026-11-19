@@ -17,55 +17,79 @@
 
 <main>
   <section class="panel">
-    <h2>WYBÓR LINII</h2>
-    <select id="line">
-      
-    </select>
-
-    <h2>KIERUNEK</h2>
-    <select id="direction">
-      
-    </select>
-
-    <button class="start" onclick="send('start')">ROZPOCZNIJ KURS</button>
-    <button class="end" onclick="send('end')">ZAKOŃCZ KURS</button>
+    <div class="section-heading">
+      <div>
+        <span class="eyebrow">TRASA</span>
+        <h2>WYBÓR LINII</h2>
+      </div>
+      <span class="route-chip" id="selectedLineChip">M3</span>
+    </div>
+    <button class="route-picker" id="openRouteModal">
+      <span class="button-icon">⇄</span>
+      <span><strong id="routeButtonTitle">Wybierz linię i kierunek</strong><small id="routeButtonSubtitle">Dotknij, aby otworzyć listę linii</small></span>
+      <span class="chevron">›</span>
+    </button>
+    <button class="start" onclick="send('start')">▶ &nbsp; ROZPOCZNIJ KURS</button>
+    <button class="end" onclick="send('end')">■ &nbsp; ZAKOŃCZ KURS</button>
   </section>
 
   <section class="panel controls">
+    <span class="eyebrow">OBSŁUGA KURSU</span>
     <h2>STEROWANIE PRZYSTANKAMI</h2>
-
     <div class="buttons">
       <button onclick="send('previous')">◀ POPRZEDNI</button>
       <button onclick="send('next')">NASTĘPNY ▶</button>
     </div>
-
-    <button class="arrived" onclick="send('arrived')">
-      TU JESTEŚ
-    </button>
-
-    <button class="announce" onclick="send('announce')">
-      <span>🔊</span>
-      ZAPOWIEDŹ PRZYSTANKU
-    </button>
+    <button class="arrived" onclick="send('arrived')">✓ &nbsp; TU JESTEŚ</button>
+    <button class="additional" id="openAdditionalModal">♫ &nbsp; KOMUNIKATY DODATKOWE <span>›</span></button>
 
     <div class="info">
       <span>LINIA</span>
       <strong id="currentLine">M3</strong>
-
       <span>KIERUNEK</span>
-      <strong id="currentDirection">PIEKARY DWÓR</strong>
-
+      <strong id="currentDirection">---</strong>
       <span>STATUS</span>
       <strong id="status">NIEAKTYWNY</strong>
-
       <span>AKTUALNY PRZYSTANEK</span>
       <strong id="currentStop">---</strong>
-
       <span>STATUS PRZYSTANKU</span>
       <strong id="stopStatus">---</strong>
     </div>
   </section>
 </main>
+
+<div class="modal-backdrop" id="routeModal" aria-hidden="true">
+  <section class="modal route-modal" role="dialog" aria-modal="true" aria-labelledby="routeModalTitle">
+    <div class="modal-header">
+      <div><span class="eyebrow">KATALOG GTFS</span><h2 id="routeModalTitle">Wybierz linię</h2></div>
+      <button class="close-modal" data-close="routeModal" aria-label="Zamknij">×</button>
+    </div>
+    <div class="route-search-wrap">
+      <label for="lineSearch">WYSZUKAJ LINIĘ</label>
+      <input id="lineSearch" type="search" placeholder="Np. M3, 830, 5..." autocomplete="off">
+    </div>
+    <div class="route-modal-content">
+      <div class="line-list" id="lineList"></div>
+      <div class="direction-panel">
+        <span class="eyebrow">KIERUNEK</span>
+        <div id="directionList" class="direction-list"><p class="empty-state">Najpierw wybierz linię.</p></div>
+      </div>
+    </div>
+    <div class="modal-footer"><span id="lineCount">Ładowanie linii...</span><button class="secondary" data-close="routeModal">ZAMKNIJ</button></div>
+  </section>
+</div>
+
+<div class="modal-backdrop" id="additionalModal" aria-hidden="true">
+  <section class="modal additional-modal" role="dialog" aria-modal="true" aria-labelledby="additionalModalTitle">
+    <div class="modal-header">
+      <div><span class="eyebrow">BIBLIOTEKA AUDIO</span><h2 id="additionalModalTitle">Komunikaty dodatkowe</h2></div>
+      <button class="close-modal" data-close="additionalModal" aria-label="Zamknij">×</button>
+    </div>
+    <p class="modal-description">Wybierz komunikat, który ma zostać odtworzony w pojeździe.</p>
+    <div id="additionalList" class="additional-list"><p class="empty-state">Wczytywanie komunikatów...</p></div>
+    <div class="modal-footer"><span id="additionalCount"> </span><button class="secondary" data-close="additionalModal">ZAMKNIJ</button></div>
+  </section>
+</div>
 
 <script src="/driver/app.js"></script>
 </body>
