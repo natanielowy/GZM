@@ -318,13 +318,28 @@ wss.on('connection', ws => {
     }
 
     switch (message.action) {
-      case 'start':
-        if (!getRoute()) return;
+      case 'start': {
+        const route = getRoute();
+        if (!route) return;
         state.active = true;
         state.stopIndex = 0;
         state.atStop = false;
         state.announcement = null;
+
+        // Komunikat początkowy: życzenia, numer linii i kierunek.
+        const lineAudio = (audioByName.get(normalizeAudioName(state.line)) || [])
+          .find(file => file.includes(path.join('0 Numery linii')));
+        const directionAudio = getStopAudio({ name: state.direction });
+        const introFiles = [
+          getAdditionalAudio('34_ZyczymyPrzyjemnejPodrozy'),
+          path.join(AUDIO_DIR, '0 Numery linii', 'Linia.mp3'),
+          lineAudio,
+          path.join(AUDIO_DIR, '0 Numery linii', 'Kierunek.mp3'),
+          directionAudio
+        ];
+        queueAudio(introFiles);
         break;
+      }
 
       case 'select':
         if (!getRoute(message.line, message.direction)) return;
