@@ -1,28 +1,8 @@
 let ws;
+let linesData = [];
 
 const line = document.getElementById('line');
 const direction = document.getElementById('direction');
-
-const stops = {
-  M3: {
-    'Piekary Dwór': [
-      'Bobrowniki Dworzec',
-      'Nowy Świat',
-      'Centrum handlowe',
-      'Osiedle',
-      'Centrum przesiadkowe',
-      'Piekary Dwór'
-    ],
-    'Bobrowniki Dworzec': [
-      'Piekary Dwór',
-      'Centrum przesiadkowe',
-      'Osiedle',
-      'Centrum handlowe',
-      'Nowy Świat',
-      'Bobrowniki Dworzec'
-    ]
-  }
-};
 
 function connect() {
   const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -39,10 +19,7 @@ function connect() {
 
   ws.onmessage = event => {
     const message = JSON.parse(event.data);
-
-    if (message.type === 'state') {
-      render(message.state);
-    }
+    if (message.type === 'state') render(message.state);
   };
 }
 
@@ -51,37 +28,70 @@ function send(action) {
     alert('Brak połączenia z serwerem!');
     return;
   }
-
   ws.send(JSON.stringify({ action }));
 }
 
+function loadLines() {
+  fetch('/api/gtfs/lines')
+    .then(response => {
+      if (!response.ok) throw new Error('Nie udało się pobrać linii GTFS');
+      return response.json();
+    })
+    .then(data => {
+      linesData = data;
+      line.innerHTML = '';
+      data.forEach(item => {
+        const option = document.createElement('option');
+        option.value = item.line;
+        option.textContent = item.line;
+        line.appendChild(option);
+      });
+      updateDirections();
+    })
+    .catch(error => {
+      console.error(error);
+      document.getElementById('connection').textContent = 'BŁĄD GTFS';
+    });
+}
+
+function updateDirections(selectedDirection) {
+  const item = linesData.find(entry => entry.line === line.value);
+  direction.innerHTML = '';
+  (item?.directions || []).forEach(name => {
+    const option = document.createElement('option');
+    option.value = name;
+    option.textContent = name;
+    direction.appendChild(option);
+  });
+  if (selectedDirection && [...direction.options].some(option => option.value === selectedDirection)) {
+    direction.value = selectedDirection;
+  }
+}
+
 function render(state) {
-  document.getElementById('currentLine').textContent = state.line;
+  document.getElementById('currentLine').textContent = state.line || '---';
+  document.getElementById('currentDirection').textContent = (state.direction || '---').toUpperCase();
+  document.getElementById('status').textContent = state.active ? 'KURS AKTYWNY' : 'NIEAKTYWNY';
 
-  document.getElementById('currentDirection').textContent =
-    state.direction.toUpperCase();
-
-  document.getElementById('status').textContent =
-    state.active ? 'KURS AKTYWNY' : 'NIEAKTYWNY';
-
-  const route = stops[state.line]?.[state.direction] || [];
-
+  const stops = state.stops || [];
   document.getElementById('currentStop').textContent =
-    state.active ? route[state.stopIndex] || '---' : '---';
+    state.active ? stops[state.stopIndex]?.name || '---' : '---';
 
   document.getElementById('stopStatus').textContent =
     !state.active ? '---' : state.atStop ? 'NA PRZYSTANKU' : 'W TRAKCIE JAZDY';
 
-  line.value = state.line;
-  direction.value = state.direction;
+  if (line.value !== state.line) line.value = state.line || '';
+  updateDirections(state.direction);
 }
 
-line.addEventListener('change', selectRoute);
+line.addEventListener('change', () => {
+  updateDirections();
+  selectRoute();
+});
 direction.addEventListener('change', selectRoute);
 
 function selectRoute() {
   if (!ws || ws.readyState !== WebSocket.OPEN) return;
-
   ws.send(JSON.stringify({
     action: 'select',
     line: line.value,
@@ -89,4 +99,5 @@ function selectRoute() {
   }));
 }
 
+loadLines();
 connect();
