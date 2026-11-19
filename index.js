@@ -327,8 +327,14 @@ wss.on('connection', ws => {
         state.announcement = null;
 
         // Komunikat początkowy: życzenia, numer linii i kierunek.
-        const lineAudio = (audioByName.get(normalizeAudioName(state.line)) || [])
-          .find(file => file.includes(path.join('0 Numery linii')));
+        // Szukamy numeru linii po dokładnej nazwie pliku w katalogu autobusowym.
+        // Nie korzystamy z ogólnej mapy nazw, bo może zawierać kolizje z innymi nagraniami.
+        const lineAudioCandidates = [
+          path.join(AUDIO_DIR, '0 Numery linii', 'Autobusowe', `${state.line}.mp3`),
+          path.join(AUDIO_DIR, '0 Numery linii', 'Tramwajowe', `${state.line}.mp3`),
+          path.join(AUDIO_DIR, '0 Numery linii', 'Nocne', `${state.line}.mp3`)
+        ];
+        const lineAudio = lineAudioCandidates.find(file => fs.existsSync(file)) || null;
         const directionAudio = getStopAudio({ name: state.direction });
         const introFiles = [
           getAdditionalAudio('34_ZyczymyPrzyjemnejPodrozy'),
