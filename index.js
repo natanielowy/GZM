@@ -4,10 +4,39 @@ const WebSocket = require('ws');
 const path = require('path');
 const fs = require('fs');
 const { spawn } = require('child_process');
+const crypto = require('crypto');
 
 const app = express();
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
+app.set('trust proxy', 1);
+app.use(express.json({ limit: '8kb' }));
+
+const DRIVER_PASSWORD = process.env.GZM_DRIVER_PASSWORD || '';
+const DRIVER_SESSION_TTL = 12 * 60 * 60 * 1000;
+const driverSessions = new Map();
+
+function readCookie(header, name) {
+  const prefix = name + '=';
+  for (const part of String(header || '').split(';')) {
+    const item = part.trim();
+    if (item.startsWith(prefix)) return decodeURIComponent(item.slice(prefix.length));
+  }
+  return '';
+}
+function isValidDriverToken(token) {
+  const expiresAt = driverSessions.get(token);
+  if (!expiresAt) return false;
+  if (expiresAt < Date.now()) {
+    driverSessions.delete(token);
+    return false;
+  }
+  return true;
+}
+function setDriverCookie(res, token, maxAge) {
+  const secure = String(res.req.headers['x-forwarded-proto'] || '').split(',')[0].trim() === 'https' || res.req.secure;
+  res.setHeader('Set-Cookie', `gzm_driver=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${maxAge}${secure ? '; Secure' : ''}`);
+}
 
 const GTFS_DIR = path.join(__dirname, '../data/gtfs/current');
 const AUDIO_DIR = path.join(__dirname, '../data/announcements/Zapowiedzi');
@@ -335,6 +364,29 @@ function publishState() {
 
 app.use(express.static(path.join(__dirname, '../public')));
 
+app.post('/api/auth/login', (req, res) => {
+  if (!DRIVER_PASSWORD) return res.status(503).json({ error: 'Logowanie nie jest skonfigurowane na serwerze.' });
+  const supplied = String(req.body?.password || '');
+  const expectedBuffer = Buffer.from(DRIVER_PASSWORD);
+  const suppliedBuffer = Buffer.from(supplied);
+  const valid = suppliedBuffer.length === expectedBuffer.length && crypto.timingSafeEqual(suppliedBuffer, expectedBuffer);
+  if (!valid) return res.status(401).json({ error: 'Nieprawidłowe hasło.' });
+  const token = crypto.randomBytes(32).toString('hex');
+  driverSessions.set(token, Date.now() + DRIVER_SESSION_TTL);
+  setDriverCookie(res, token, DRIVER_SESSION_TTL / 1000);
+  res.json({ authenticated: true });
+});
+app.get('/api/auth/status', (req, res) => {
+  const token = readCookie(req.headers.cookie, 'gzm_driver');
+  res.json({ authenticated: isValidDriverToken(token) });
+});
+app.post('/api/auth/logout', (req, res) => {
+  const token = readCookie(req.headers.cookie, 'gzm_driver');
+  if (token) driverSessions.delete(token);
+  setDriverCookie(res, '', 0);
+  res.json({ authenticated: false });
+});
+
 app.get('/', (req, res) => res.redirect('/display'));
 app.get('/display', (req, res) => res.sendFile(path.join(__dirname, '../public/display/index.html')));
 app.get('/driver', (req, res) => res.sendFile(path.join(__dirname, '../public/driver/index.html')));
@@ -369,7 +421,9 @@ app.get('/api/gtfs/route', (req, res) => {
   });
 });
 
-wss.on('connection', ws => {
+wss.on('connection', (ws, req) => {
+  const sessionToken = readCookie(req.headers.cookie, 'gzm_driver');
+  ws.isDriverAuthenticated = isValidDriverToken(sessionToken);
   ws.send(JSON.stringify({ type: 'state', state: getPublicState() }));
 
   ws.on('message', raw => {
@@ -377,6 +431,11 @@ wss.on('connection', ws => {
     try {
       message = JSON.parse(raw.toString());
     } catch {
+      return;
+    }
+
+    if (!ws.isDriverAuthenticated) {
+      ws.send(JSON.stringify({ type: 'error', error: 'Zaloguj się, aby sterować kursem.' }));
       return;
     }
 
