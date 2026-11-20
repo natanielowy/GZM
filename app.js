@@ -3,12 +3,14 @@ let linesData = [];
 let latestState = null;
 let selectedLineForModal = null;
 let additionalData = [];
+let driverAuthenticated = false;
 
 const lineSearch = document.getElementById('lineSearch');
 const lineList = document.getElementById('lineList');
 const directionList = document.getElementById('directionList');
 
 function connect() {
+  if (ws && ws.readyState === WebSocket.OPEN) ws.close();
   const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
   ws = new WebSocket(`${protocol}//${location.host}`);
   ws.onopen = () => document.getElementById('connection').textContent = 'POŁĄCZONO';
@@ -19,16 +21,70 @@ function connect() {
   ws.onmessage = event => {
     const message = JSON.parse(event.data);
     if (message.type === 'state') render(message.state);
+    if (message.type === 'error') alert(message.error);
   };
 }
 
 function send(action, extra = {}) {
+  if (!driverAuthenticated) {
+    document.getElementById('loginGate').classList.remove('hidden');
+    return;
+  }
   if (!ws || ws.readyState !== WebSocket.OPEN) {
     alert('Brak połączenia z serwerem!');
     return;
   }
   ws.send(JSON.stringify({ action, ...extra }));
 }
+
+function setDriverAuthenticated(value) {
+  driverAuthenticated = Boolean(value);
+  document.getElementById('loginGate').classList.toggle('hidden', driverAuthenticated);
+  document.getElementById('logoutButton').hidden = !driverAuthenticated;
+}
+
+async function checkDriverAuth() {
+  try {
+    const response = await fetch('/api/auth/status', { credentials: 'same-origin' });
+    const data = await response.json();
+    setDriverAuthenticated(data.authenticated);
+  } catch {
+    setDriverAuthenticated(false);
+  }
+}
+
+document.getElementById('loginForm').addEventListener('submit', async event => {
+  event.preventDefault();
+  const button = document.getElementById('loginButton');
+  const error = document.getElementById('loginError');
+  button.disabled = true;
+  button.textContent = 'LOGOWANIE...';
+  error.textContent = '';
+  try {
+    const response = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify({ password: document.getElementById('driverPassword').value })
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Nie udało się zalogować.');
+    document.getElementById('driverPassword').value = '';
+    setDriverAuthenticated(true);
+    connect();
+  } catch (err) {
+    error.textContent = err.message;
+  } finally {
+    button.disabled = false;
+    button.textContent = 'ZALOGUJ SIĘ';
+  }
+});
+
+document.getElementById('logoutButton').addEventListener('click', async () => {
+  await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' });
+  setDriverAuthenticated(false);
+  if (ws) ws.close();
+});
 
 function openModal(id) {
   const modal = document.getElementById(id);
@@ -176,4 +232,4 @@ lineSearch.addEventListener('input', renderLineList);
 
 loadLines();
 loadAdditional();
-connect();
+checkDriverAuth().finally(connect);
