@@ -15,12 +15,17 @@ app.use(express.json({ limit: '8kb' }));
 const DRIVER_PASSWORD = process.env.GZM_DRIVER_PASSWORD || '';
 const DRIVER_SESSION_TTL = 12 * 60 * 60 * 1000;
 const driverSessions = new Map();
+const loginFailures = new Map();
+const LOGIN_WINDOW_MS = 10 * 60 * 1000;
+const LOGIN_MAX_FAILURES = 5;
 
 function readCookie(header, name) {
   const prefix = name + '=';
   for (const part of String(header || '').split(';')) {
     const item = part.trim();
-    if (item.startsWith(prefix)) return decodeURIComponent(item.slice(prefix.length));
+    if (item.startsWith(prefix)) {
+      try { return decodeURIComponent(item.slice(prefix.length)); } catch { return ''; }
+    }
   }
   return '';
 }
@@ -43,7 +48,7 @@ const AUDIO_DIR = path.join(__dirname, '../data/announcements/Zapowiedzi');
 const AUDIO_DEVICE = 'alsa/plughw:CARD=PCH,DEV=3';
 
 function normalizeAudioName(value) {
-  return String(value || '').normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  return String(value || '').toLowerCase().replace(/ł/g, 'l').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/g, '');
 }
 function collectAudioFiles(directory, result = []) {
   if (!fs.existsSync(directory)) return result;
@@ -366,11 +371,25 @@ app.use(express.static(path.join(__dirname, '../public')));
 
 app.post('/api/auth/login', (req, res) => {
   if (!DRIVER_PASSWORD) return res.status(503).json({ error: 'Logowanie nie jest skonfigurowane na serwerze.' });
+  const ip = req.ip || req.socket.remoteAddress || 'unknown';
+  const now = Date.now();
+  let attempt = loginFailures.get(ip);
+  if (!attempt || attempt.resetAt <= now) {
+    attempt = { failures: 0, resetAt: now + LOGIN_WINDOW_MS };
+    loginFailures.set(ip, attempt);
+  }
+  if (attempt.failures >= LOGIN_MAX_FAILURES) {
+    return res.status(429).json({ error: 'Za dużo nieudanych prób. Spróbuj ponownie za 10 minut.' });
+  }
   const supplied = String(req.body?.password || '');
   const expectedBuffer = Buffer.from(DRIVER_PASSWORD);
   const suppliedBuffer = Buffer.from(supplied);
   const valid = suppliedBuffer.length === expectedBuffer.length && crypto.timingSafeEqual(suppliedBuffer, expectedBuffer);
-  if (!valid) return res.status(401).json({ error: 'Nieprawidłowe hasło.' });
+  if (!valid) {
+    attempt.failures++;
+    return res.status(401).json({ error: 'Nieprawidłowe hasło.' });
+  }
+  loginFailures.delete(ip);
   const token = crypto.randomBytes(32).toString('hex');
   driverSessions.set(token, Date.now() + DRIVER_SESSION_TTL);
   setDriverCookie(res, token, DRIVER_SESSION_TTL / 1000);
@@ -434,8 +453,10 @@ wss.on('connection', (ws, req) => {
       return;
     }
 
-    if (!ws.isDriverAuthenticated) {
-      ws.send(JSON.stringify({ type: 'error', error: 'Zaloguj się, aby sterować kursem.' }));
+    const currentToken = readCookie(req.headers.cookie, 'gzm_driver');
+    if (!ws.isDriverAuthenticated || !isValidDriverToken(currentToken)) {
+      ws.isDriverAuthenticated = false;
+      ws.send(JSON.stringify({ type: 'error', error: 'Sesja wygasła. Zaloguj się ponownie.' }));
       return;
     }
 
