@@ -12,8 +12,21 @@
     <strong>SRG-6000P</strong>
     <small>GZM PASSENGER SYSTEM</small>
   </div>
-  <span id="connection">ŁĄCZENIE...</span>
+  <div class="header-actions"><span id="connection">ŁĄCZENIE...</span><button id="logoutButton" class="logout-button" hidden>WYLOGUJ</button></div>
 </header>
+
+<div class="login-gate" id="loginGate">
+  <form class="login-card" id="loginForm">
+    <div class="login-mark">GZM</div>
+    <span class="eyebrow">STREFA KIEROWCY</span>
+    <h1>Logowanie do sterownika</h1>
+    <p>Dostęp do sterowania kursem wymaga hasła kierowcy.</p>
+    <label for="driverPassword">HASŁO</label>
+    <input id="driverPassword" type="password" autocomplete="current-password" required>
+    <button class="start" type="submit" id="loginButton">ZALOGUJ SIĘ</button>
+    <div class="login-error" id="loginError" role="alert"></div>
+  </form>
+</div>
 
 <main>
   <section class="panel">
